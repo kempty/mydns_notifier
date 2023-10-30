@@ -1,6 +1,7 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # –*- coding: utf-8 –*-
 
+import os
 import json
 import time
 import socket
@@ -11,7 +12,9 @@ from zoneinfo import ZoneInfo               # python -m pip install tzdata(Windo
 
 MYDNS_IPV4_NOTIFIER_URL = 'https://ipv4.mydns.jp/login.html'
 MYDNS_IPV6_NOTIFIER_URL = 'https://ipv6.mydns.jp/login.html'
-JSON_PATH = "./mydns.json"
+SCRIPT_DIR = os.path.dirname(__file__) + '/'
+JSON_PATH = SCRIPT_DIR + 'mydns.json'
+LOG_PATH = SCRIPT_DIR + 'log'
 
 IDX_ADDR_INFO_IP = 4
 IDX_IP_STR = 0
@@ -171,7 +174,15 @@ def check_timeout(last_time:datetime, timeout_sec:float) -> bool :
     is_timeout = (datetime.now(JST) > time_out)               # 現在時刻がタイムアウト発生時刻以降か判定
     return is_timeout
 
+def puts_log(msg:str) :
+    # ひとまずやっつけ起動ログ
+    msg = datetime.now(JST).isoformat(timespec='seconds') + ', ' + msg
+    print(msg)
+    with open(LOG_PATH, 'a') as fp:
+        fp.write(msg +'\n')
+
 def main() -> None :
+    puts_log(os.path.basename(__file__) + '起動')
     # 各ドメインのインスタンスを作る
     domains = MydnsDomain.import_json(JSON_PATH)
 
@@ -184,16 +195,16 @@ def main() -> None :
         if is_need_notifier :
             if(d.notify_ipv4(cur_ip)):
                 # 通知成功
-                print(d.url + ' (' + d.ip + ') : IP ADDRESS NOTIFICATION SUCCESS!')
+                puts_log(d.url + ' (' + d.ip + ') : IP ADDRESS NOTIFICATION SUCCESS!')
                 # 結果をJSONファイルに書き出し
                 MydnsDomain.export_json(domains, JSON_PATH)
             else:
                 # 通知失敗
-                print(d.url + ' : IP ADDRESS NOTIFICATION FAILED!')
-                # 失敗した時も記録残した方がいい気がしてきた→JSONに失敗の時刻入れるところ作る？
+                puts_log(d.url + ' : IP ADDRESS NOTIFICATION FAILED!')
             time.sleep(1)                           #通知した場合は次まで1秒Waitする
         else :
-            print(d.url + ' (' + d.ip + ') : NO NOTIFICATION NECESSARY.')
+            puts_log(d.url + ' (' + d.ip + ') : NO NOTIFICATION NECESSARY.')
+    puts_log(os.path.basename(__file__) + '終了')
 
 if __name__ == '__main__' : 
     main()
