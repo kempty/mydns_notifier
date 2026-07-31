@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-# –*- coding: utf-8 –*-
 
-import os
 import json
-import time
-import socket
-from pathlib import Path
 import logging
-import requests                             # pip3 install requests
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo               # python -m pip install tzdata(Windowsのみ)
-from typing import Final, Optional
+import os
+import socket
+import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Final, cast
+from zoneinfo import ZoneInfo  # python -m pip install tzdata(Windowsのみ)
+
+import requests  # pip3 install requests
 
 MYDNS_IPV4_NOTIFIER_URL:Final[str] = 'https://ipv4.mydns.jp/login.html'
 MYDNS_IPV6_NOTIFIER_URL:Final[str] = 'https://ipv6.mydns.jp/login.html'
@@ -28,6 +28,9 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
 )
 
+# module logger
+logger = logging.getLogger(__name__)
+
 REQUESTS_TIMEOUT:Final[int] = 5
 
 IDX_ADDR_INFO_IP:Final[int] = 4
@@ -42,7 +45,7 @@ NOTIFIER_TIMEOUT:Final[int] = ONE_DAY_SECONDS - 30     # タイムアウト時�
 
 @dataclass
 class Last:
-    ip: Optional[str]
+    ip: str | None
     time: datetime
 
 class MydnsDomain :
@@ -55,8 +58,8 @@ class MydnsDomain :
         self._pw   = pw
         self._url  = url
         # avoid network calls in __init__; populate ip/last in import_json or explicitly
-        self._ip = None
-        self._last = None
+        self._ip: str | None = None
+        self._last: Last | None = None
 
     @property
     def name(self) -> str:
@@ -75,11 +78,11 @@ class MydnsDomain :
         return self._url
 
     @property
-    def ip(self) -> str:
+    def ip(self) -> str | None:
         return self._ip
 
     @property
-    def last(self) -> Optional[Last]:
+    def last(self) -> Last | None:
         return self._last
 
     @classmethod
@@ -91,10 +94,10 @@ class MydnsDomain :
             with open(path) as fp:
                 data = json.load(fp)
         except FileNotFoundError:
-            logging.error('Config file not found: %s', path)
+            logger.error('Config file not found: %s', path)
             raise
         except json.JSONDecodeError as e:
-            logging.error('Config JSON decode error: %s', e)
+            logger.error('Config JSON decode error: %s', e)
             raise
 
         domains = []
@@ -112,20 +115,20 @@ class MydnsDomain :
                     t_str = last.get('time')
                     t = datetime.fromisoformat(t_str).astimezone(JST)
                     d._last = Last(ip=last.get('ip'), time=t)
-                except Exception as e:
-                    logging.warning('Invalid last entry for %s: %s', key, e)
+                except (ValueError, TypeError) as e:
+                    logger.warning('Invalid last entry for %s: %s', key, e)
                     d._last = Last(ip=None, time=datetime.now(JST))
             else:
                 try:
                     cur_ip = get_global_ip()
-                except Exception:
+                except requests.RequestException:
                     cur_ip = None
                 d._last = Last(ip=cur_ip, time=datetime.now(JST))
 
             # resolve DNS for ip
             try:
                 d._ip = get_ip_from_dns(d.url)
-            except Exception:
+            except (socket.gaierror, ValueError):
                 d._ip = None
 
             domains.append(d)
@@ -173,7 +176,7 @@ class MydnsDomain :
             )
             res.raise_for_status()
         except requests.RequestException as e:
-            logging.error('Failed to notify %s: %s', self._url, e)
+            logger.error('Failed to notify %s: %s', self._url, e)
             return False
 
         if res.status_code == HTTP_STATUS_CODE_OK:
@@ -185,7 +188,7 @@ class MydnsDomain :
                 self._last.time = datetime.now(JST)
             return True
         else:
-            logging.error('http response = %s', res.status_code)
+            logger.error('http response = %s', res.status_code)
             return False
 
 def get_ip_from_dns(url:str) -> str :
@@ -203,15 +206,17 @@ def get_ip_from_dns(url:str) -> str :
     try:
         addr_inf = socket.getaddrinfo(url, None)
         for ai in addr_inf:
-            try:
                 sockaddr = ai[IDX_ADDR_INFO_IP]
-                dns_ip = sockaddr[IDX_IP_STR]
-                return dns_ip
-            except Exception:
-                continue
+                try:
+                    sockaddr_t = cast(tuple[str, int], sockaddr)
+                    dns_ip = sockaddr_t[0]
+                    return dns_ip
+                except (IndexError, TypeError) as e:
+                    logger.debug('Skipping addrinfo entry: %s', e)
+                    continue
         raise ValueError(f'no address found for {url}')
     except socket.gaierror as e:
-        logging.error('DNS lookup failed for %s: %s', url, e)
+        logger.error('DNS lookup failed for %s: %s', url, e)
         raise
 
 def get_global_ip() -> str :
@@ -226,7 +231,7 @@ def get_global_ip() -> str :
         r.raise_for_status()
         return r.text.strip()
     except requests.RequestException as e:
-        logging.error('Failed to get global IP: %s', e)
+        logger.error('Failed to get global IP: %s', e)
         raise
 
 def check_timeout(last_time:datetime, timeout_sec:float) -> bool :
@@ -253,7 +258,7 @@ def puts_log(msg:str) :
     # ひとまずやっつけ起動ログ
     msg = datetime.now(JST).isoformat(timespec='seconds') + ', ' + msg
     print(msg)
-    logging.info(msg)
+    logger.info(msg)
 
 def main() -> None :
     puts_log(os.path.basename(__file__) + '起動')
@@ -265,7 +270,8 @@ def main() -> None :
 
     # 各ドメインのDNSに登録されたIPと現在のIPを比較し不一致か、前回から24時間経過していればIP通知する
     for d in domains :
-        is_need_notifier = (cur_ip != d.ip) or check_timeout(d.last.time, NOTIFIER_TIMEOUT)
+        last_time = d.last.time if d.last else (datetime.now(JST) - timedelta(seconds=NOTIFIER_TIMEOUT + 1))
+        is_need_notifier = (cur_ip != d.ip) or check_timeout(last_time, NOTIFIER_TIMEOUT)
         if is_need_notifier :
             if(d.notify_ipv4(cur_ip)):
                 # 通知成功
@@ -277,7 +283,7 @@ def main() -> None :
                 # 通知失敗
                 puts_log(d.url + ' : IP ADDRESS NOTIFICATION FAILED!')
         else :
-            puts_log(d.url + ' (' + d.ip + ') : NO NOTIFICATION NECESSARY.')
+            puts_log(d.url + ' (' + str(d.ip) + ') : NO NOTIFICATION NECESSARY.')
     puts_log(os.path.basename(__file__) + '終了')
 
 if __name__ == '__main__' : 

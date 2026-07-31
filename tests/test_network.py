@@ -1,6 +1,7 @@
 import socket
-import requests
+
 import pytest
+import requests
 
 from mydns_notifier import get_global_ip, get_ip_from_dns
 
