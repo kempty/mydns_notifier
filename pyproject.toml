@@ -1,0 +1,17 @@
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+exclude = [".venv", "__pycache__", "log", ".git", ".pytest_cache", ".mypy_cache", ".ruff_cache"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "BLE", "LOG", "S"]
+ignore = []
+per-file-ignores = {"tests/*.py" = ["F401", "S101"]}
+
+[tool.mypy]
+python_version = 3.12
+ignore_missing_imports = true
+strict = false
+follow_imports = "normal"
+show_error_codes = true
+files = ["mydns_notifier.py", "tests"]

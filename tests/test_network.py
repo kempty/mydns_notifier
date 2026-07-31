@@ -17,9 +17,11 @@ class DummyResponse:
 
 
 def test_get_global_ip_success(monkeypatch):
-    monkeypatch.setattr('mydns_notifier.requests.get', lambda *a, **k: DummyResponse('1.2.3.4\n'))
-    ip = get_global_ip()
-    assert ip == '1.2.3.4'
+    monkeypatch.setattr(
+        'mydns_notifier.requests.get',
+        lambda *a, **k: DummyResponse('1.2.3.4\n'),
+    )
+    assert get_global_ip() == '1.2.3.4'
 
 
 def test_get_global_ip_failure(monkeypatch):
@@ -33,9 +35,11 @@ def test_get_global_ip_failure(monkeypatch):
 
 def test_get_ip_from_dns_success(monkeypatch):
     # socket.getaddrinfo returns list of 5-tuples; index 4 is sockaddr tuple
-    monkeypatch.setattr('mydns_notifier.socket.getaddrinfo', lambda host, _port: [(None, None, None, None, ('203.0.113.5', 0))])
-    ip = get_ip_from_dns('example.test')
-    assert ip == '203.0.113.5'
+    monkeypatch.setattr(
+        'mydns_notifier.socket.getaddrinfo',
+        lambda host, _port: [(None, None, None, None, ('203.0.113.5', 0))],
+    )
+    assert get_ip_from_dns('example.test') == '203.0.113.5'
 
 
 def test_get_ip_from_dns_failure(monkeypatch):

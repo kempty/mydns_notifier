@@ -40,8 +40,10 @@ HTTP_STATUS_CODE_OK:Final[int] = 200
 
 JST:Final[ZoneInfo] = ZoneInfo('Asia/Tokyo')           # 日本標準時(UTC+0900)
 
-ONE_DAY_SECONDS:Final[int] = 24 * 60 * 60              # 24時間の秒数
-NOTIFIER_TIMEOUT:Final[int] = ONE_DAY_SECONDS - 30     # タイムアウト時間(少しずつ遅れないように30秒分余裕しろを持つ)
+ONE_DAY_SECONDS:Final[int] = 24 * 60 * 60  # 24時間の秒数
+NOTIFIER_TIMEOUT:Final[int] = (
+    ONE_DAY_SECONDS - 30
+)  # タイムアウト時間(少しずつ遅れないように30秒分余裕しろを持つ)
 
 @dataclass
 class Last:
@@ -141,7 +143,11 @@ class MydnsDomain :
         '''
         out = {}
         for d in domains:
-            time_iso = d.last.time.isoformat(timespec='seconds') if d.last and isinstance(d.last.time, datetime) else None
+            time_iso = (
+                d.last.time.isoformat(timespec='seconds')
+                if d.last and isinstance(d.last.time, datetime)
+                else None
+            )
             out[d.name] = {
                 'url': d.url,
                 'id': d.id,
@@ -250,8 +256,12 @@ def check_timeout(last_time:datetime, timeout_sec:float) -> bool :
         True: タイムアウト発生
         False: タイムアウト未発生
     '''
-    time_out = last_time + timedelta(seconds=timeout_sec)     # タイムアウト発生時刻を算出
-    is_timeout = (datetime.now(JST) > time_out)               # 現在時刻がタイムアウト発生時刻以降か判定
+    time_out = (
+        last_time + timedelta(seconds=timeout_sec)
+    )  # タイムアウト発生時刻を算出
+    is_timeout = (
+        datetime.now(JST) > time_out
+    )  # 現在時刻がタイムアウト発生時刻以降か判定
     return is_timeout
 
 def puts_log(msg:str) :
@@ -268,10 +278,16 @@ def main() -> None :
     # 現在のグローバルIPを確認
     cur_ip  = get_global_ip()
 
-    # 各ドメインのDNSに登録されたIPと現在のIPを比較し不一致か、前回から24時間経過していればIP通知する
+    # 各ドメインのDNSに登録されたIPと現在のIPを比較し、
+    # 不一致か前回から24時間経過していれば通知する
     for d in domains :
-        last_time = d.last.time if d.last else (datetime.now(JST) - timedelta(seconds=NOTIFIER_TIMEOUT + 1))
-        is_need_notifier = (cur_ip != d.ip) or check_timeout(last_time, NOTIFIER_TIMEOUT)
+        last_time = d.last.time if d.last else (
+            datetime.now(JST) - timedelta(seconds=NOTIFIER_TIMEOUT + 1)
+        )
+        is_need_notifier = (
+            (cur_ip != d.ip)
+            or check_timeout(last_time, NOTIFIER_TIMEOUT)
+        )
         if is_need_notifier :
             if(d.notify_ipv4(cur_ip)):
                 # 通知成功
