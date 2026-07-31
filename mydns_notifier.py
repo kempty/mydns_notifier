@@ -10,7 +10,8 @@ import logging
 import requests                             # pip3 install requests
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo               # python -m pip install tzdata(Windowsのみ)
-from typing import Final
+from typing import Final, Optional
+from dataclasses import dataclass
 
 MYDNS_IPV4_NOTIFIER_URL:Final[str] = 'https://ipv4.mydns.jp/login.html'
 MYDNS_IPV6_NOTIFIER_URL:Final[str] = 'https://ipv6.mydns.jp/login.html'
@@ -39,15 +40,10 @@ JST:Final[ZoneInfo] = ZoneInfo('Asia/Tokyo')           # 日本標準時(UTC+090
 ONE_DAY_SECONDS:Final[int] = 24 * 60 * 60              # 24時間の秒数
 NOTIFIER_TIMEOUT:Final[int] = ONE_DAY_SECONDS - 30     # タイムアウト時間(少しずつ遅れないように30秒分余裕しろを持つ)
 
-class JsonObject(dict):
-    '''
-    JSONにOBJECTのようにアクセス出来る（属性アクセスを提供）
-    '''
-    def __getattr__(self, name):
-        try:
-            return self[name]
-        except KeyError:
-            raise AttributeError(name)
+@dataclass
+class Last:
+    ip: Optional[str]
+    time: datetime
 
 class MydnsDomain :
     '''
@@ -83,7 +79,7 @@ class MydnsDomain :
         return self._ip
 
     @property
-    def last(self) -> JsonObject:
+    def last(self) -> Optional[Last]:
         return self._last
 
     @classmethod
@@ -115,16 +111,16 @@ class MydnsDomain :
                 try:
                     t_str = last.get('time')
                     t = datetime.fromisoformat(t_str).astimezone(JST)
-                    d._last = JsonObject(ip=last.get('ip'), time=t)
+                    d._last = Last(ip=last.get('ip'), time=t)
                 except Exception as e:
                     logging.warning('Invalid last entry for %s: %s', key, e)
-                    d._last = JsonObject(ip=None, time=datetime.now(JST))
+                    d._last = Last(ip=None, time=datetime.now(JST))
             else:
                 try:
                     cur_ip = get_global_ip()
                 except Exception:
                     cur_ip = None
-                d._last = JsonObject(ip=cur_ip, time=datetime.now(JST))
+                d._last = Last(ip=cur_ip, time=datetime.now(JST))
 
             # resolve DNS for ip
             try:
@@ -183,7 +179,7 @@ class MydnsDomain :
         if res.status_code == HTTP_STATUS_CODE_OK:
             # update last
             if not self._last:
-                self._last = JsonObject(ip=ip, time=datetime.now(JST))
+                self._last = Last(ip=ip, time=datetime.now(JST))
             else:
                 self._last.ip = ip
                 self._last.time = datetime.now(JST)
