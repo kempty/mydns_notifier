@@ -5,17 +5,29 @@ import os
 import json
 import time
 import socket
+from pathlib import Path
+import logging
 import requests                             # pip3 install requests
-from datetime import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo               # python -m pip install tzdata(Windowsのみ)
 from typing import Final
 
 MYDNS_IPV4_NOTIFIER_URL:Final[str] = 'https://ipv4.mydns.jp/login.html'
 MYDNS_IPV6_NOTIFIER_URL:Final[str] = 'https://ipv6.mydns.jp/login.html'
-SCRIPT_DIR:Final[str] = os.path.dirname(__file__) + '/'
-JSON_PATH:Final[str] = SCRIPT_DIR + 'mydns.json'
-LOG_PATH:Final[str] = SCRIPT_DIR + 'log'
+SCRIPT_DIR:Final[Path] = Path(__file__).resolve().parent
+JSON_PATH:Final[Path] = SCRIPT_DIR / 'mydns.json'
+LOG_DIR:Final[Path] = SCRIPT_DIR / 'log'
+LOG_PATH:Final[Path] = LOG_DIR / 'mydns_notifier.log'
+
+# ensure log directory exists and configure logging
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+logging.basicConfig(
+    filename=str(LOG_PATH),
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+)
+
+REQUESTS_TIMEOUT:Final[int] = 5
 
 IDX_ADDR_INFO_IP:Final[int] = 4
 IDX_IP_STR:Final[int] = 0
@@ -114,20 +126,24 @@ class MydnsDomain :
         result : bool
             通知の成否
         '''
-        res = requests.post(MYDNS_IPV4_NOTIFIER_URL,
-                            auth=requests.auth.HTTPBasicAuth(self.__id, self.__pw))
+        try:
+            res = requests.post(
+                MYDNS_IPV4_NOTIFIER_URL,
+                auth=requests.auth.HTTPBasicAuth(self.__id, self.__pw),
+                timeout=REQUESTS_TIMEOUT,
+            )
+            res.raise_for_status()
+        except requests.RequestException as e:
+            logging.error('Failed to notify %s: %s', self.__url, e)
+            return False
 
         if res.status_code == HTTP_STATUS_CODE_OK:
-#            print(self.url + ' (' + self.ip + ') : IP UPDATE SUCCESS!')
             self.__last.ip = ip
             self.__last.time = datetime.now(JST)
-            result = True
-        else :
-#            print(self.url + ' : FAILED TO NOTIFY IP ADDRESS!')
-            print('http respnse = ' + str(res.status_code))
-            result = False
-
-        return result
+            return True
+        else:
+            logging.error('http response = %s', res.status_code)
+            return False
 
 def get_ip_from_dns(url:str) -> str :
     '''
@@ -141,9 +157,19 @@ def get_ip_from_dns(url:str) -> str :
     dns_ip : str
         urlを名前解決したIPアドレス
     '''
-    addr_inf = socket.getaddrinfo(url, None)
-    dns_ip = addr_inf.pop(0)[IDX_ADDR_INFO_IP][IDX_IP_STR]
-    return dns_ip
+    try:
+        addr_inf = socket.getaddrinfo(url, None)
+        for ai in addr_inf:
+            try:
+                sockaddr = ai[IDX_ADDR_INFO_IP]
+                dns_ip = sockaddr[IDX_IP_STR]
+                return dns_ip
+            except Exception:
+                continue
+        raise ValueError(f'no address found for {url}')
+    except socket.gaierror as e:
+        logging.error('DNS lookup failed for %s: %s', url, e)
+        raise
 
 def get_global_ip() -> str :
     '''
@@ -152,8 +178,13 @@ def get_global_ip() -> str :
     global_ip : str
         This machine's Global IP Address
     '''
-    global_ip = requests.get('https://ifconfig.me/ip').text
-    return global_ip
+    try:
+        r = requests.get('https://ifconfig.me/ip', timeout=REQUESTS_TIMEOUT)
+        r.raise_for_status()
+        return r.text.strip()
+    except requests.RequestException as e:
+        logging.error('Failed to get global IP: %s', e)
+        raise
 
 def check_timeout(last_time:datetime, timeout_sec:float) -> bool :
     '''
@@ -179,8 +210,7 @@ def puts_log(msg:str) :
     # ひとまずやっつけ起動ログ
     msg = datetime.now(JST).isoformat(timespec='seconds') + ', ' + msg
     print(msg)
-    with open(LOG_PATH, 'a') as fp:
-        fp.write(msg +'\n')
+    logging.info(msg)
 
 def main() -> None :
     puts_log(os.path.basename(__file__) + '起動')
