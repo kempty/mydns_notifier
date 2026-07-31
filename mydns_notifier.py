@@ -9,22 +9,23 @@ import requests                             # pip3 install requests
 from datetime import datetime
 from datetime import timedelta
 from zoneinfo import ZoneInfo               # python -m pip install tzdata(Windowsのみ)
+from typing import Final
 
-MYDNS_IPV4_NOTIFIER_URL = 'https://ipv4.mydns.jp/login.html'
-MYDNS_IPV6_NOTIFIER_URL = 'https://ipv6.mydns.jp/login.html'
-SCRIPT_DIR = os.path.dirname(__file__) + '/'
-JSON_PATH = SCRIPT_DIR + 'mydns.json'
-LOG_PATH = SCRIPT_DIR + 'log'
+MYDNS_IPV4_NOTIFIER_URL:Final[str] = 'https://ipv4.mydns.jp/login.html'
+MYDNS_IPV6_NOTIFIER_URL:Final[str] = 'https://ipv6.mydns.jp/login.html'
+SCRIPT_DIR:Final[str] = os.path.dirname(__file__) + '/'
+JSON_PATH:Final[str] = SCRIPT_DIR + 'mydns.json'
+LOG_PATH:Final[str] = SCRIPT_DIR + 'log'
 
-IDX_ADDR_INFO_IP = 4
-IDX_IP_STR = 0
+IDX_ADDR_INFO_IP:Final[int] = 4
+IDX_IP_STR:Final[int] = 0
 
-HTTP_STATUS_CODE_OK = 200
+HTTP_STATUS_CODE_OK:Final[int] = 200
 
-JST = ZoneInfo('Asia/Tokyo')                # 日本標準時(UTC+0900)
+JST:Final[ZoneInfo] = ZoneInfo('Asia/Tokyo')           # 日本標準時(UTC+0900)
 
-ONE_DAY_SECONDS = 24 * 60 * 60              # 24時間の秒数
-NOTIFIER_TIMEOUT = ONE_DAY_SECONDS - 30     # タイムアウト時間(少しずつ遅れないように30秒分余裕しろを持つ)
+ONE_DAY_SECONDS:Final[int] = 24 * 60 * 60              # 24時間の秒数
+NOTIFIER_TIMEOUT:Final[int] = ONE_DAY_SECONDS - 30     # タイムアウト時間(少しずつ遅れないように30秒分余裕しろを持つ)
 
 class JsonObject(dict):
       '''
@@ -195,13 +196,13 @@ def main() -> None :
         if is_need_notifier :
             if(d.notify_ipv4(cur_ip)):
                 # 通知成功
-                puts_log(d.url + ' (' + d.ip + ') : IP ADDRESS NOTIFICATION SUCCESS!')
+                puts_log(d.url + ' (' + cur_ip + ') : IP ADDRESS NOTIFICATION SUCCESS!')
                 # 結果をJSONファイルに書き出し
                 MydnsDomain.export_json(domains, JSON_PATH)
+                time.sleep(1)                           #通知した場合は次まで1秒Waitする
             else:
                 # 通知失敗
                 puts_log(d.url + ' : IP ADDRESS NOTIFICATION FAILED!')
-            time.sleep(1)                           #通知した場合は次まで1秒Waitする
         else :
             puts_log(d.url + ' (' + d.ip + ') : NO NOTIFICATION NECESSARY.')
     puts_log(os.path.basename(__file__) + '終了')
