@@ -40,75 +40,118 @@ ONE_DAY_SECONDS:Final[int] = 24 * 60 * 60              # 24時間の秒数
 NOTIFIER_TIMEOUT:Final[int] = ONE_DAY_SECONDS - 30     # タイムアウト時間(少しずつ遅れないように30秒分余裕しろを持つ)
 
 class JsonObject(dict):
-      '''
-      JSONにOBJECTのようにアクセス出来る
-      '''
-      # PythonでJSONデータを扱う工夫 | TECHSCORE BLOG https://www.techscore.com/blog/2019/12/16/better-way-handling-json-data-in-python/
-      __getattr__ = dict.get
+    '''
+    JSONにOBJECTのようにアクセス出来る（属性アクセスを提供）
+    '''
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(name)
 
 class MydnsDomain :
     '''
     MyDNS
     '''
     def __init__(self, name:str, url:str, id:str, pw:str, last=None) -> None:
-        self.__name = name
-        self.__id   = id
-        self.__pw   = pw
-        self.__url  = url
-        self.__ip   = get_ip_from_dns(url)
-        if(last==None):
-            self.__last = JsonObject(ip=get_global_ip(), time=datetime.now(JST))
-        else:
-            self.__last = JsonObject(ip=last.ip, time=datetime.fromisoformat(last.time))
+        self._name = name
+        self._id   = id
+        self._pw   = pw
+        self._url  = url
+        # avoid network calls in __init__; populate ip/last in import_json or explicitly
+        self._ip = None
+        self._last = None
 
     @property
     def name(self) -> str:
-        return self.__name
+        return self._name
 
     @property
     def id(self) -> str:
-        return self.__id
+        return self._id
 
     @property
     def pw(self) -> str:
-        return self.__pw
+        return self._pw
 
     @property
     def url(self) -> str:
-        return self.__url
+        return self._url
 
     @property
     def ip(self) -> str:
-        return self.__ip
+        return self._ip
 
     @property
     def last(self) -> JsonObject:
-        return self.__last
+        return self._last
 
     @classmethod
-    def import_json(cls, path:str) -> list['MydnsDomain']:
+    def import_json(cls, path:str | Path) -> list['MydnsDomain']:
         '''
         設定用JSONの読み込み
         '''
-        with open(path) as fp:
-            data = json.load(fp, object_hook=JsonObject)
+        try:
+            with open(path) as fp:
+                data = json.load(fp)
+        except FileNotFoundError:
+            logging.error('Config file not found: %s', path)
+            raise
+        except json.JSONDecodeError as e:
+            logging.error('Config JSON decode error: %s', e)
+            raise
+
         domains = []
-        for key in data:
-            domains.append(cls(key, data[key].url, data[key].id, data[key].pw, data[key].last))
+        for key, entry in data.items():
+            url = entry.get('url')
+            id_ = entry.get('id')
+            pw = entry.get('pw')
+            last = entry.get('last')
+
+            d = cls(key, url, id_, pw, last=None)
+
+            # parse last
+            if last:
+                try:
+                    t_str = last.get('time')
+                    t = datetime.fromisoformat(t_str).astimezone(JST)
+                    d._last = JsonObject(ip=last.get('ip'), time=t)
+                except Exception as e:
+                    logging.warning('Invalid last entry for %s: %s', key, e)
+                    d._last = JsonObject(ip=None, time=datetime.now(JST))
+            else:
+                try:
+                    cur_ip = get_global_ip()
+                except Exception:
+                    cur_ip = None
+                d._last = JsonObject(ip=cur_ip, time=datetime.now(JST))
+
+            # resolve DNS for ip
+            try:
+                d._ip = get_ip_from_dns(d.url)
+            except Exception:
+                d._ip = None
+
+            domains.append(d)
         return domains
 
     @classmethod
-    def export_json(cls, domains:list['MydnsDomain'], path:str) -> None:
+    def export_json(cls, domains:list['MydnsDomain'], path:str | Path) -> None:
         '''
         設定用JSONの書き込み
         '''
-        out = JsonObject()
+        out = {}
         for d in domains:
-            out[d.name] = JsonObject(url=d.url,
-                                     id=d.id,
-                                     pw=d.pw,
-                                     last=JsonObject(ip=d.last.ip,
-                                                     time=d.last.time.isoformat(timespec='seconds')))
+            time_iso = d.last.time.isoformat(timespec='seconds') if d.last and isinstance(d.last.time, datetime) else None
+            out[d.name] = {
+                'url': d.url,
+                'id': d.id,
+                'pw': d.pw,
+                'last': {
+                    'ip': d.last.ip if d.last else None,
+                    'time': time_iso,
+                }
+            }
         with open(path, 'w') as fp:
             json.dump(out, fp, indent=4)
 
@@ -129,17 +172,21 @@ class MydnsDomain :
         try:
             res = requests.post(
                 MYDNS_IPV4_NOTIFIER_URL,
-                auth=requests.auth.HTTPBasicAuth(self.__id, self.__pw),
+                auth=requests.auth.HTTPBasicAuth(self._id, self._pw),
                 timeout=REQUESTS_TIMEOUT,
             )
             res.raise_for_status()
         except requests.RequestException as e:
-            logging.error('Failed to notify %s: %s', self.__url, e)
+            logging.error('Failed to notify %s: %s', self._url, e)
             return False
 
         if res.status_code == HTTP_STATUS_CODE_OK:
-            self.__last.ip = ip
-            self.__last.time = datetime.now(JST)
+            # update last
+            if not self._last:
+                self._last = JsonObject(ip=ip, time=datetime.now(JST))
+            else:
+                self._last.ip = ip
+                self._last.time = datetime.now(JST)
             return True
         else:
             logging.error('http response = %s', res.status_code)
