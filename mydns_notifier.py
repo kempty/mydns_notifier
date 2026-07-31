@@ -63,14 +63,21 @@ class MydnsDomain :
     '''
     MyDNS
     '''
-    def __init__(self, name:str, url:str, id:str, pw:str, last=None) -> None:
+    def __init__(
+        self,
+        name: str,
+        url: str,
+        id: str,
+        pw: str,
+        last: Last | None = None,
+    ) -> None:
         self._name = name
-        self._id   = id
-        self._pw   = pw
-        self._url  = url
+        self._id = id
+        self._pw = pw
+        self._url = url
         # avoid network calls in __init__; populate ip/last in import_json or explicitly
         self._ip: str | None = None
-        self._last: Last | None = None
+        self._last = last
 
     @property
     def name(self) -> str:
@@ -118,7 +125,7 @@ class MydnsDomain :
             pw = entry.get('pw')
             last = entry.get('last')
 
-            d = cls(key, url, id_, pw, last=None)
+            d = cls(key, url, id_, pw)
 
             # parse last
             if last:
@@ -136,17 +143,12 @@ class MydnsDomain :
                     cur_ip = None
                 d._last = Last(ip=cur_ip, time=datetime.now(JST))
 
-            # resolve DNS for ip
-            try:
-                d._ip = get_ip_from_dns(d.url)
-            except (socket.gaierror, ValueError):
-                d._ip = None
-
+            d.refresh_ip()
             domains.append(d)
         return domains
 
     @classmethod
-    def export_json(cls, domains:list['MydnsDomain'], path:str | Path) -> None:
+    def export_json(cls, domains: list['MydnsDomain'], path: str | Path) -> None:
         '''
         設定用JSONの書き込み
         '''
@@ -169,7 +171,16 @@ class MydnsDomain :
         with open(path, 'w') as fp:
             json.dump(out, fp, indent=4)
 
-    def notify_ipv4(self, ip:str) -> bool :
+    def refresh_ip(self) -> None:
+        '''
+        Refresh the current DNS IP for this domain.
+        '''
+        try:
+            self._ip = get_ip_from_dns(self.url)
+        except (socket.gaierror, ValueError):
+            self._ip = None
+
+    def notify_ipv4(self, ip: str) -> bool:
         '''
         MyDNSにIPアドレスを通知する
 
