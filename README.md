@@ -34,6 +34,15 @@ last以下の項目は前回の通知時のIPと日時を記録しています�
 }
 ```
 
+## インストール
+
+依存関係は `pyproject.toml` に移行しました。
+
+```bash
+python3 -m pip install --upgrade pip
+python3 -m pip install --no-cache-dir ".[dev]"
+```
+
 ## 今後やるかも
 * 動作ログの出力
 * 通知周期を24時間固定ではなく、JSONで指定できるようにする？
