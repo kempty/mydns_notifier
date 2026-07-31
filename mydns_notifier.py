@@ -7,6 +7,7 @@ import socket
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Final, cast
 from zoneinfo import ZoneInfo  # python -m pip install tzdata(Windowsのみ)
@@ -22,11 +23,19 @@ LOG_PATH:Final[Path] = LOG_DIR / 'mydns_notifier.log'
 
 # ensure log directory exists and configure logging
 LOG_DIR.mkdir(parents=True, exist_ok=True)
-logging.basicConfig(
+
+LOG_MAX_BYTES: Final[int] = 1_000_000
+LOG_BACKUP_COUNT: Final[int] = 5
+handler = RotatingFileHandler(
     filename=str(LOG_PATH),
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    maxBytes=LOG_MAX_BYTES,
+    backupCount=LOG_BACKUP_COUNT,
+    encoding='utf-8',
 )
+handler.setFormatter(
+    logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+)
+logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 # module logger
 logger = logging.getLogger(__name__)
