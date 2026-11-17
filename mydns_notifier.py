@@ -61,15 +61,17 @@ NOTIFIER_TIMEOUT: Final[int] = (
 
 @dataclass
 class Last:
+    """前回の通知履歴（IPアドレスおよび通知日時）を保持するデータクラス。"""
+
     ipv4: str | None = None
     ipv6: str | None = None
     ipv4_time: datetime | None = None
     ipv6_time: datetime | None = None
 
+
 class MydnsDomain:
-    '''
-    MyDNS
-    '''
+    """MyDNSで管理するドメインの情報と通知処理を扱うクラス。"""
+
     def __init__(
         self,
         name: str,
@@ -78,6 +80,22 @@ class MydnsDomain:
         pw: str,
         last: Last | None = None,
     ) -> None:
+        """
+        MydnsDomainのインスタンスを初期化する。
+
+        Parameters
+        ----------
+        name : str
+            ドメイン名（識別用キー）
+        url : str
+            対象ドメインのURL（ホスト名）
+        id : str
+            MyDNSのログインID
+        pw : str
+            MyDNSのログインパスワード
+        last : Last | None, optional
+            前回の通知情報。省略時はNone
+        """
         self._name = name
         self._id = id
         self._pw = pw
@@ -88,37 +106,61 @@ class MydnsDomain:
 
     @property
     def name(self) -> str:
+        """ドメイン名（識別用キー）を取得する。"""
         return self._name
 
     @property
     def id(self) -> str:
+        """MyDNSログインIDを取得する。"""
         return self._id
 
     @property
     def pw(self) -> str:
+        """MyDNSログインパスワードを取得する。"""
         return self._pw
 
     @property
     def url(self) -> str:
+        """対象ドメインのURL（ホスト名）を取得する。"""
         return self._url
 
     @property
     def ipv4(self) -> str | None:
+        """DNSから名前解決したIPv4アドレスを取得する。"""
         return self._ipv4
 
     @property
     def ipv6(self) -> str | None:
+        """DNSから名前解決したIPv6アドレスを取得する。"""
         return self._ipv6
 
     @property
     def last(self) -> Last | None:
+        """前回の通知情報を取得する。"""
         return self._last
 
     @classmethod
     def import_json(cls, path: str | Path) -> list['MydnsDomain']:
-        '''
-        設定用JSONの読み込み
-        '''
+        """
+        設定ファイル（JSON）からドメイン設定を読み込み、MydnsDomainのリストを生成する。
+
+        Parameters
+        ----------
+        path : str | Path
+            読み込むJSONファイルのパス
+
+        Returns
+        -------
+        list[MydnsDomain]
+            生成されたMydnsDomainインスタンスのリスト
+
+        Raises
+        ------
+        FileNotFoundError
+            設定ファイルが存在しない場合
+        json.JSONDecodeError
+            設定ファイルが正しいJSON形式でない場合
+        """
         try:
             with open(path) as fp:
                 data = json.load(fp)
@@ -185,9 +227,16 @@ class MydnsDomain:
 
     @classmethod
     def export_json(cls, domains: list['MydnsDomain'], path: str | Path) -> None:
-        '''
-        設定用JSONの書き込み
-        '''
+        """
+        ドメイン一覧の現在の設定および最新通知状態をJSONファイルに保存する。
+
+        Parameters
+        ----------
+        domains : list[MydnsDomain]
+            保存対象のMydnsDomainインスタンスのリスト
+        path : str | Path
+            保存先のJSONファイルパス
+        """
         out: dict[str, object] = {}
         for d in domains:
             out[d.name] = {
@@ -213,9 +262,9 @@ class MydnsDomain:
             json.dump(out, fp, indent=4)
 
     def refresh_ip(self) -> None:
-        '''
-        Refresh the current DNS IP for this domain.
-        '''
+        """
+        DNSから対象ドメインの最新のIPv4およびIPv6アドレスを取得してプロパティを更新する。
+        """
         try:
             self._ipv4 = get_ip_from_dns(self.url, socket.AF_INET)
         except (socket.gaierror, ValueError):
@@ -238,14 +287,40 @@ class MydnsDomain:
             self._last.ipv6_time = now
 
     def notify_ipv4(self, ip: str) -> bool:
+        """
+        MyDNSにIPv4アドレスを通知する。
+
+        Parameters
+        ----------
+        ip : str
+            通知するIPv4アドレス
+
+        Returns
+        -------
+        bool
+            通知が成功した場合はTrue、失敗した場合はFalse
+        """
         return self._notify(ip, NOTIFIER_URLS[IPV4], IPV4)
 
     def notify_ipv6(self, ip: str) -> bool:
+        """
+        MyDNSにIPv6アドレスを通知する。
+
+        Parameters
+        ----------
+        ip : str
+            通知するIPv6アドレス
+
+        Returns
+        -------
+        bool
+            通知が成功した場合はTrue、失敗した場合はFalse
+        """
         return self._notify(ip, NOTIFIER_URLS[IPV6], IPV6)
 
     def _notify(self, ip: str, notifier_url: str, family: str) -> bool:
-        '''
-        MyDNSにIPアドレスを通知する
+        """
+        MyDNSにIPアドレスを通知する。
 
         Parameters
         ----------
@@ -260,7 +335,7 @@ class MydnsDomain:
         -------
         bool
             通知の成否
-        '''
+        """
         try:
             res = requests.post(
                 notifier_url,
@@ -290,19 +365,29 @@ def _parse_datetime(datetime_str: str | None) -> datetime | None:
 
 
 def get_ip_from_dns(url: str, family: int = socket.AF_UNSPEC) -> str:
-    '''
+    """
+    指定されたURL（ホスト名）をDNSで名前解決し、IPアドレスを取得する。
+
     Parameters
     ----------
-    url:str
-        名前解決したいURL
-    family:int
-        解決するアドレスファミリ。`socket.AF_INET`, `socket.AF_INET6` または `socket.AF_UNSPEC`
+    url : str
+        名前解決したいURL（ホスト名）
+    family : int, optional
+        解決するアドレスファミリ。`socket.AF_INET`, `socket.AF_INET6`,
+        または `socket.AF_UNSPEC`（デフォルトは `socket.AF_UNSPEC`）
 
     Returns
     -------
-    dns_ip : str
-        urlを名前解決したIPアドレス
-    '''
+    str
+        名前解決されたIPアドレス
+
+    Raises
+    ------
+    socket.gaierror
+        DNSの名前解決に失敗した場合
+    ValueError
+        アドレス情報が見つからなかった場合
+    """
     try:
         addr_inf = socket.getaddrinfo(url, None, family)
         for ai in addr_inf:
@@ -320,12 +405,26 @@ def get_ip_from_dns(url: str, family: int = socket.AF_UNSPEC) -> str:
 
 
 def get_global_ip(ip_version: str = IPV4) -> str:
-    '''
+    """
+    外部サービスを利用して、このマシンのグローバルIPアドレスを取得する。
+
+    Parameters
+    ----------
+    ip_version : str, optional
+        取得するIPバージョン（'ipv4' または 'ipv6'、デフォルトは 'ipv4'）
+
     Returns
     -------
-    global_ip : str
-        This machine's Global IP Address for the requested IP version
-    '''
+    str
+        取得されたグローバルIPアドレス
+
+    Raises
+    ------
+    ValueError
+        無効なip_versionが指定された場合
+    requests.RequestException
+        IPアドレスの取得リクエストが失敗した場合
+    """
     url = PUBLIC_IP_URLS.get(ip_version)
     if not url:
         raise ValueError('Invalid IP version: %s' % ip_version)
@@ -345,6 +444,25 @@ def should_notify(
     last_ip: str | None,
     last_time: datetime | None,
 ) -> bool:
+    """
+    MyDNSへのIPアドレス通知が必要かどうかを判定する。
+
+    Parameters
+    ----------
+    cur_ip : str | None
+        現在のグローバルIPアドレス
+    dns_ip : str | None
+        DNSに登録されているIPアドレス
+    last_ip : str | None
+        最後に通知したIPアドレス
+    last_time : datetime | None
+        最後に通知した時刻
+
+    Returns
+    -------
+    bool
+        通知が必要な場合はTrue、不要な場合はFalse
+    """
     if not cur_ip or not dns_ip:
         return False
     if last_ip != cur_ip:
@@ -354,22 +472,24 @@ def should_notify(
     return check_timeout(last_time, NOTIFIER_TIMEOUT)
 
 
-def check_timeout(last_time:datetime, timeout_sec:float) -> bool :
-    '''
-    基準時刻から、タイムアウト秒数以上経過(タイムアウト)しているか判定する
-    基準時刻に未来を指定された場合は、必ずタイムアウト
+def check_timeout(last_time: datetime, timeout_sec: float) -> bool:
+    """
+    基準時刻から指定された秒数以上経過（タイムアウト）しているかを判定する。
+
+    基準時刻に未来の日時が指定された場合は、必ずタイムアウト（True）と判定する。
 
     Parameters
     ----------
-    last_time: 基準時刻
-    timeout_sec: タイムアウト時間
+    last_time : datetime
+        基準時刻
+    timeout_sec : float
+        タイムアウト時間（秒）
 
     Returns
     -------
-    is_timeout : bool
-        True: タイムアウト発生
-        False: タイムアウト未発生
-    '''
+    bool
+        タイムアウトが発生した場合はTrue、未発生の場合はFalse
+    """
     time_out = (
         last_time + timedelta(seconds=timeout_sec)
     )  # タイムアウト発生時刻を算出
@@ -379,14 +499,25 @@ def check_timeout(last_time:datetime, timeout_sec:float) -> bool :
     return is_timeout
 
 
-def puts_log(msg:str) :
+def puts_log(msg: str) -> None:
+    """
+    タイムスタンプ付きのログメッセージを標準出力とログファイルに出力する。
+
+    Parameters
+    ----------
+    msg : str
+        出力するログメッセージ
+    """
     # ひとまずやっつけ起動ログ
     msg = datetime.now(JST).isoformat(timespec='seconds') + ', ' + msg
     print(msg)
     logger.info(msg)
 
 
-def main() -> None :
+def main() -> None:
+    """
+    メイン処理。設定ファイルを読み込み、各ドメインのIP確認・更新・通知を実行する。
+    """
     puts_log(os.path.basename(__file__) + '起動')
     # 各ドメインのインスタンスを作る
     domains = MydnsDomain.import_json(JSON_PATH)
